@@ -73,9 +73,31 @@ def _query_sample(
         emb = r.get("embedding")
         if isinstance(emb, list):
             r["embedding_dim"] = len(emb)
-            r["embedding_preview"] = emb[:5]
+            r["embedding_preview"] = [float(x) for x in emb[:5]]
             r.pop("embedding", None)
     return normalized
+
+
+def _to_jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    # numpy scalars (e.g. np.float32) and similar types
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _to_jsonable(item())
+        except Exception:
+            pass
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except Exception:
+            return value.hex()
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_jsonable(v) for v in value]
+    return str(value)
 
 
 @click.command(help="Inspect Milvus collection schema and row count, and optionally print sample rows.")
@@ -113,7 +135,7 @@ def main(
             "collection_stats": stats,
             "sample_rows": sample_rows,
         }
-        click.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        click.echo(json.dumps(_to_jsonable(payload), ensure_ascii=False, indent=2))
         return
 
     click.echo(f"Collection: {collection}")
@@ -125,7 +147,7 @@ def main(
     if sample_rows is not None:
         click.echo("")
         click.echo(f"Sample rows (n={len(sample_rows)}):")
-        click.echo(json.dumps(sample_rows, ensure_ascii=False, indent=2))
+        click.echo(json.dumps(_to_jsonable(sample_rows), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
